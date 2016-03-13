@@ -1,0 +1,12 @@
+{
+    "name": "readlnk",
+    "description": "A minimal D application.",
+    "copyright": "Copyright © 2016, Roman",
+    "authors": ["Roman"],
+    "dependencies": {
+        "lnk" : "*"
+    },
+    "targetPath" : "bin",
+    "targetType" : "executable",
+    "targetName" : "readlnk" 
+}

@@ -83,10 +83,27 @@ private @trusted const(wchar)[] readWString(const(ubyte)[] data)
     throw new ShellLinkException("Could not read null-terminated wide string");
 }
 
-class ShellLinkException : Exception
+final class ShellLinkException : Exception
 {
     this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null) pure nothrow @safe {
         super(msg, file, line, next);
+    }
+}
+
+version(Windows) {
+    import core.sys.windows.windows : MultiByteToWideChar, CP_ACP;
+
+    @trusted const(wchar)[] fromANSIToUnicode(const(char)[] ansi)
+    {
+        auto requiredLength = MultiByteToWideChar(0, 0, ansi.ptr, ansi.length, null, 0);
+        if (requiredLength) {
+            auto wstr = new wchar[requiredLength];
+            auto bytesWritten = MultiByteToWideChar(0, 0, ansi.ptr, ansi.length, wstr.ptr, wstr.length);
+            if (bytesWritten) {
+                return wstr[0..$-1];
+            }
+        }
+        return null;
     }
 }
 
@@ -147,12 +164,12 @@ public:
             if (_linkInfoHeader.localBasePathOffsetUnicode) {
                 _localBasePath = readWString(linkInfoData[_linkInfoHeader.localBasePathOffsetUnicode..$]).toUTF8();
             } else if (_linkInfoHeader.localBasePathOffset) {
-                _localBasePath = readString(linkInfoData[_linkInfoHeader.localBasePathOffset..$]).idup;
+                _localBasePath = fromANSIToUnicode(readString(linkInfoData[_linkInfoHeader.localBasePathOffset..$])).toUTF8();
             }
             if (_linkInfoHeader.commonPathSuffixOffsetUnicode) {
                 _commonPathSuffix = readWString(linkInfoData[_linkInfoHeader.commonPathSuffixOffsetUnicode..$]).toUTF8();
             } else if (_linkInfoHeader.commonPathSuffixOffset) {
-                _commonPathSuffix = readString(linkInfoData[_linkInfoHeader.commonPathSuffixOffset..$]).idup;
+                _commonPathSuffix = fromANSIToUnicode(readString(linkInfoData[_linkInfoHeader.commonPathSuffixOffset..$])).toUTF8();
             }
             
             if (_linkInfoHeader.flags & VolumeIDAndLocalBasePath && _linkInfoHeader.volumeIdOffset) {

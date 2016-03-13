@@ -1,6 +1,6 @@
 {
     "name": "lnk",
-    "description": "Parse Shell Link objects (.lnk files).",
+    "description": "Parsing Shell Link files (.lnk).",
     "license" : "BSL-1.0", 
     "copyright": "Copyright © 2016, Roman Chistokhodov",
     "authors" : ["Roman Chistokhodov"], 
@@ -8,5 +8,6 @@
     "targetPath" : "lib", 
     "targetType" : "library",
     "dependencies": {
-    }
+    },
+    "subPackages" : ["./examples/readlnk"]
 }
