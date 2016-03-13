@@ -1,3 +1,14 @@
+/**
+ * Parse Shell Link files (.lnk).
+ * Authors: 
+ *  $(LINK2 https://github.com/MyLittleRobo, Roman Chistokhodov)
+ * Copyright:
+ *  Roman Chistokhodov, 2016
+ * License: 
+ *  $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0).
+ * See_Also: 
+ *  $(LINK2 https://msdn.microsoft.com/en-us/library/dd871305.aspx, Shell Link Binary File Format)
+ */
 
 module lnk;
 
@@ -83,6 +94,10 @@ private @trusted const(wchar)[] readWString(const(ubyte)[] data)
     throw new ShellLinkException("Could not read null-terminated wide string");
 }
 
+
+/**
+ * Exception thrown if shell link file data could not be parsed.
+ */
 final class ShellLinkException : Exception
 {
     this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null) pure nothrow @safe {
@@ -91,9 +106,10 @@ final class ShellLinkException : Exception
 }
 
 version(Windows) {
-    import core.sys.windows.windows : MultiByteToWideChar, CP_ACP;
+    import core.sys.windows.windows : MultiByteToWideChar, CommandLineToArgvW;
+    import core.stdc.wchar_;
 
-    @trusted const(wchar)[] fromANSIToUnicode(const(char)[] ansi)
+    private @trusted const(wchar)[] fromANSIToUnicode(const(char)[] ansi) nothrow
     {
         auto requiredLength = MultiByteToWideChar(0, 0, ansi.ptr, ansi.length, null, 0);
         if (requiredLength) {
@@ -105,10 +121,27 @@ version(Windows) {
         }
         return null;
     }
+    
+    private @trusted string[] parseCommandLine(string commandLine)
+    {
+        auto wCommandLineZ = ("Dummy.exe " ~ commandLine).toUTF16z();
+        int argc;
+        auto argv = CommandLineToArgvW(wCommandLineZ, &argc);
+        if (argv is null || argc == 0) {
+            return null;
+        }
+        
+        string[] args;
+        args.length = argc-1;
+        for (size_t i=0; i<args.length; ++i) {
+            args[i] = argv[i+1][0..wcslen(argv[i+1])].toUTF8();
+        }
+        return args;
+    }
 }
 
 /**
- * Access Shell Link objects (.lnk files)
+ * Class for accessing Shell Link objects (.lnk files)
  */
 final class ShellLink 
 {
@@ -132,6 +165,9 @@ private:
 public:
     /**
      * Read Shell Link from fileName.
+     * Throws: 
+     *  FileException is file could not be read.
+     *  ShellLinkException if file could not be parsed.
      * Note: file will be read as whole.
      */
     @trusted this(string fileName)
@@ -140,7 +176,9 @@ public:
     }
 
     /**
-     * Read Shell Link from data.
+     * Read Shell Link from data. fileName should be path to the .lnk file where data was read from.
+     * Throws:
+     *  ShellLinkException if data could not be parsed.
      */
     @safe this(const(ubyte)[] data, string fileName = null)
     {
@@ -200,35 +238,45 @@ public:
     /**
      * Get description of for a Shell Link object.
      */
-    @nogc @safe string description() const {
+    @nogc @safe string description() const nothrow {
         return _name;
     }
     
     /**
      * Get relative path of for a Shell Link object.
      */
-    @nogc @safe string relativePath() const {
+    @nogc @safe string relativePath() const nothrow {
         return _relativePath;
     }
     
     /**
      * Get working directory of for a Shell Link object.
      */
-    @nogc @safe string workingDirectory() const {
+    @nogc @safe string workingDirectory() const nothrow {
         return _workingDir;
     }
     
     /**
-     * Get arguments of for a Shell Link object as one string (target file path is not included)
+     * Get arguments of for a Shell Link object as one string. Target file path is NOT included.
      */
-    @nogc @safe string argumentsString() const {
+    @nogc @safe string argumentsString() const nothrow {
         return _arguments;
+    }
+    
+    version(Windows) {
+        /**
+         * Get command line arguments. Target file path is NOT included.
+         * Note: this function is Windows only.
+         */
+        @safe string[] arguments() const {
+            return parseCommandLine(_arguments);
+        }
     }
     
     /**
      * Get icon location of for a Shell Link object.
      */
-    @nogc @safe string iconLocation() const {
+    @nogc @safe string iconLocation() const nothrow {
         return _iconLocation;
     }
     
@@ -242,7 +290,7 @@ public:
     /**
      * Get path of link object as was specified upon constructing.
      */
-    @nogc @safe string fileName() const {
+    @nogc @safe string fileName() const nothrow {
         return _fileName;
     }
     

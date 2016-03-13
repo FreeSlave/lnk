@@ -12,6 +12,10 @@ void main(string[] args)
     writeln("Description: ", link.description);
     writeln("Relative path: ", link.relativePath);
     writeln("Working directory: ", link.workingDirectory);
-    writeln("Arguments: ", link.argumentsString);
+    version(Windows) {
+        writefln("Arguments: %(%s %)", link.arguments);
+    } else {
+        writeln("Arguments: ", link.argumentsString);
+    }
     writeln("Resolve: ", link.resolve());
 }
