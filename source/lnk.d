@@ -202,12 +202,22 @@ public:
             if (_linkInfoHeader.localBasePathOffsetUnicode) {
                 _localBasePath = readWString(linkInfoData[_linkInfoHeader.localBasePathOffsetUnicode..$]).toUTF8();
             } else if (_linkInfoHeader.localBasePathOffset) {
-                _localBasePath = fromANSIToUnicode(readString(linkInfoData[_linkInfoHeader.localBasePathOffset..$])).toUTF8();
+                auto str = readString(linkInfoData[_linkInfoHeader.localBasePathOffset..$]);
+                version(Windows) {
+                    _localBasePath = fromANSIToUnicode(str).toUTF8();
+                } else {
+                    _localBasePath = str.idup;
+                }
             }
             if (_linkInfoHeader.commonPathSuffixOffsetUnicode) {
                 _commonPathSuffix = readWString(linkInfoData[_linkInfoHeader.commonPathSuffixOffsetUnicode..$]).toUTF8();
             } else if (_linkInfoHeader.commonPathSuffixOffset) {
-                _commonPathSuffix = fromANSIToUnicode(readString(linkInfoData[_linkInfoHeader.commonPathSuffixOffset..$])).toUTF8();
+                auto str = readString(linkInfoData[_linkInfoHeader.commonPathSuffixOffset..$]);
+                version(Windows) {
+                    _commonPathSuffix = fromANSIToUnicode(str).toUTF8();
+                } else {
+                    _commonPathSuffix = str.idup;
+                }
             }
             
             if (_linkInfoHeader.flags & VolumeIDAndLocalBasePath && _linkInfoHeader.volumeIdOffset) {
@@ -282,6 +292,10 @@ public:
     
     /**
      * Resolve target file location.
+     * Note: In case path parts were stored only as ANSI 
+     * the result string may contain garbage characters if function is ran on other system than Windows 
+     * or if user changes default code page and shell link did not get updated.
+     * If path parts were stored as Unicode it should not have problems.
      */
     @safe string resolve() const {
         return _localBasePath ~ _commonPathSuffix;
