@@ -1,0 +1,12 @@
+{
+    "name": "lnk",
+    "description": "Parse Shell Link objects (.lnk files).",
+    "license" : "BSL-1.0", 
+    "copyright": "Copyright © 2016, Roman Chistokhodov",
+    "authors" : ["Roman Chistokhodov"], 
+    "targetName" : "lnk", 
+    "targetPath" : "lib", 
+    "targetType" : "library",
+    "dependencies": {
+    }
+}
