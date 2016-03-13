@@ -33,7 +33,7 @@ private @trusted T readValue(T)(const(ubyte)[] data) if (isIntegral!T || isSomeC
         }
         return value;
     } else {
-        throw new Exception("Value of requrested size is out of data bounds");
+        throw new ShellLinkException("Value of requrested size is out of data bounds");
     }
 }
 
@@ -49,7 +49,7 @@ private @trusted const(T)[] readSlice(T = ubyte)(const(ubyte)[] data, size_t cou
     if (data.length >= count*T.sizeof) {
         return cast(typeof(return))data[0..count*T.sizeof];
     } else {
-        throw new Exception("Slice of requsted size is out of data bounds");
+        throw new ShellLinkException("Slice of requsted size is out of data bounds");
     }
 }
 
@@ -68,7 +68,7 @@ private @trusted const(char)[] readString(const(ubyte)[] data)
             return str[0..i];
         }
     }
-    throw new Exception("Could not read null-terminated string");
+    throw new ShellLinkException("Could not read null-terminated string");
 }
 
 private @trusted const(wchar)[] readWString(const(ubyte)[] data)
@@ -80,7 +80,14 @@ private @trusted const(wchar)[] readWString(const(ubyte)[] data)
             return str[0..i];
         }
     }
-    throw new Exception("Could not read null-terminated wide string");
+    throw new ShellLinkException("Could not read null-terminated wide string");
+}
+
+class ShellLinkException : Exception
+{
+    this(string msg, string file = __FILE__, size_t line = __LINE__, Throwable next = null) pure nothrow @safe {
+        super(msg, file, line, next);
+    }
 }
 
 /**
@@ -108,6 +115,7 @@ private:
 public:
     /**
      * Read Shell Link from fileName.
+     * Note: file will be read as whole.
      */
     @trusted this(string fileName)
     {
@@ -121,7 +129,7 @@ public:
     {
         _fileName = fileName;
         auto headerSize = readValue!uint(data);
-        enforce(headerSize == Header.requiredHeaderSize);
+        enforce!ShellLinkException(headerSize == Header.requiredHeaderSize, "Wrong Shell Link Header size");
         auto headerData = eatSlice(data, headerSize);
         _header = parseHeader(headerData);
         
@@ -149,7 +157,7 @@ public:
             
             if (_linkInfoHeader.flags & VolumeIDAndLocalBasePath && _linkInfoHeader.volumeIdOffset) {
                 auto volumeIdSize = readValue!uint(linkInfoData[_linkInfoHeader.volumeIdOffset..$]);
-                enforce(volumeIdSize > 0x10, "Wrong VolumeID size");
+                enforce!ShellLinkException(volumeIdSize > 0x10, "Wrong VolumeID size");
                 auto volumeIdData = readSlice(linkInfoData[_linkInfoHeader.volumeIdOffset..$], volumeIdSize);
                 _volume = parseVolumeData(volumeIdData);
             }
@@ -293,7 +301,7 @@ private:
         header.headerSize = eatValue!uint(headerData);
         auto linkCLSIDSlice = eatSlice(headerData, 16);
         
-        enforce(linkCLSIDSlice == Header.requiredLinkCLSID[]);
+        enforce!ShellLinkException(linkCLSIDSlice == Header.requiredLinkCLSID[], "Invalid Link CLSID");
         for (size_t i=0; i<16; ++i) {
             header.linkCLSID[i] = linkCLSIDSlice[i];
         }
@@ -374,7 +382,7 @@ private:
             linkInfoHeader.localBasePathOffsetUnicode = eatValue!uint(linkInfoHeaderData);
             linkInfoHeader.commonPathSuffixOffsetUnicode = eatValue!uint(linkInfoHeaderData);
         } else {
-            throw new Exception("Bad LinkInfoHeaderSize");
+            throw new ShellLinkException("Bad LinkInfoHeaderSize");
         }
         return linkInfoHeader;
     }
