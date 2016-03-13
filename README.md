@@ -2,6 +2,8 @@
 
 D library for parsing Shell Link files (.lnk aka shortcuts). 
 
+[![Build Status](https://travis-ci.org/MyLittleRobo/lnk.svg?branch=master)](https://travis-ci.org/MyLittleRobo/lnk)
+
 No IShellLink COM interface is used. Instead the library implements parsing of 
 .lnk files itself according to [Shell Link Binary File Format](https://msdn.microsoft.com/en-us/library/dd871305.aspx) specification.
 

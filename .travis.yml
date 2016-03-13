@@ -6,4 +6,4 @@ matrix:
         - d: ldc-0.15.1
 
 script:
-    - dut build --compiler=${DC}
+    - dub build --compiler=${DC}
