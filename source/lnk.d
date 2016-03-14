@@ -106,21 +106,8 @@ final class ShellLinkException : Exception
 }
 
 version(Windows) {
-    import core.sys.windows.windows : MultiByteToWideChar, CommandLineToArgvW;
+    import core.sys.windows.windows : CommandLineToArgvW, LocalFree;
     import core.stdc.wchar_;
-
-    private @trusted const(wchar)[] fromANSIToUnicode(const(char)[] ansi) nothrow
-    {
-        auto requiredLength = MultiByteToWideChar(0, 0, ansi.ptr, ansi.length, null, 0);
-        if (requiredLength) {
-            auto wstr = new wchar[requiredLength];
-            auto bytesWritten = MultiByteToWideChar(0, 0, ansi.ptr, ansi.length, wstr.ptr, wstr.length);
-            if (bytesWritten) {
-                return wstr[0..$-1];
-            }
-        }
-        return null;
-    }
     
     private @trusted string[] parseCommandLine(string commandLine)
     {
@@ -130,6 +117,7 @@ version(Windows) {
         if (argv is null || argc == 0) {
             return null;
         }
+        scope(exit) LocalFree(argv);
         
         string[] args;
         args.length = argc-1;
@@ -137,6 +125,28 @@ version(Windows) {
             args[i] = argv[i+1][0..wcslen(argv[i+1])].toUTF8();
         }
         return args;
+    }
+}
+
+private @trusted string fromANSIToUnicode(const(char)[] ansi)
+{
+    version(Windows) {
+        import core.sys.windows.windows : MultiByteToWideChar;
+        auto requiredLength = MultiByteToWideChar(0, 0, ansi.ptr, ansi.length, null, 0);
+        if (requiredLength) {
+            auto wstr = new wchar[requiredLength];
+            auto bytesWritten = MultiByteToWideChar(0, 0, ansi.ptr, ansi.length, wstr.ptr, wstr.length);
+            if (bytesWritten) {
+                if (wstr[$-1] == 0) {
+                    wstr = wstr[0..$-1];
+                }
+                return wstr.toUTF8();
+            }
+        }
+        return null;
+    } else {
+        ///TODO: implement for non-Windows.
+        return ansi.idup;
     }
 }
 
@@ -150,6 +160,7 @@ private:
     ubyte[][] _itemIdList;
     LinkInfoHeader _linkInfoHeader;
     Volume _volume;
+    CommonNetworkRelativeLink _networkLink;
     
     string _localBasePath;
     string _commonPathSuffix;
@@ -159,6 +170,9 @@ private:
     string _workingDir;
     string _arguments;
     string _iconLocation;
+    
+    string _netName;
+    string _deviceName;
     
     string _fileName;
     
@@ -203,28 +217,41 @@ public:
                 _localBasePath = readWString(linkInfoData[_linkInfoHeader.localBasePathOffsetUnicode..$]).toUTF8();
             } else if (_linkInfoHeader.localBasePathOffset) {
                 auto str = readString(linkInfoData[_linkInfoHeader.localBasePathOffset..$]);
-                version(Windows) {
-                    _localBasePath = fromANSIToUnicode(str).toUTF8();
-                } else {
-                    _localBasePath = str.idup;
-                }
+                _localBasePath = fromANSIToUnicode(str);
             }
             if (_linkInfoHeader.commonPathSuffixOffsetUnicode) {
                 _commonPathSuffix = readWString(linkInfoData[_linkInfoHeader.commonPathSuffixOffsetUnicode..$]).toUTF8();
             } else if (_linkInfoHeader.commonPathSuffixOffset) {
                 auto str = readString(linkInfoData[_linkInfoHeader.commonPathSuffixOffset..$]);
-                version(Windows) {
-                    _commonPathSuffix = fromANSIToUnicode(str).toUTF8();
-                } else {
-                    _commonPathSuffix = str.idup;
-                }
+                _commonPathSuffix = fromANSIToUnicode(str);
             }
             
             if (_linkInfoHeader.flags & VolumeIDAndLocalBasePath && _linkInfoHeader.volumeIdOffset) {
                 auto volumeIdSize = readValue!uint(linkInfoData[_linkInfoHeader.volumeIdOffset..$]);
-                enforce!ShellLinkException(volumeIdSize > 0x10, "Wrong VolumeID size");
+                enforce!ShellLinkException(volumeIdSize > Volume.minimumSize, "Wrong VolumeID size");
                 auto volumeIdData = readSlice(linkInfoData[_linkInfoHeader.volumeIdOffset..$], volumeIdSize);
                 _volume = parseVolumeData(volumeIdData);
+            }
+            
+            if (_linkInfoHeader.flags & CommonNetworkRelativeLinkAndPathSuffix && _linkInfoHeader.commonNetworkRelativeLinkOffset) {
+                auto networkLinkSize = readValue!uint(linkInfoData[_linkInfoHeader.commonNetworkRelativeLinkOffset..$]);
+                enforce!ShellLinkException(networkLinkSize >= CommonNetworkRelativeLink.minimumSize, "Wrong common network relative path link size");
+                auto networkLinkData = readSlice(linkInfoData[_linkInfoHeader.commonNetworkRelativeLinkOffset..$], networkLinkSize);
+                _networkLink = parseNetworkLink(networkLinkData);
+                
+                if (_networkLink.netNameOffsetUnicode) {
+                    _netName = readWString(networkLinkData[_networkLink.netNameOffsetUnicode..$]).toUTF8();
+                } else if (_networkLink.netNameOffset) {
+                    auto str = readString(networkLinkData[_networkLink.netNameOffset..$]);
+                    _netName = fromANSIToUnicode(str);
+                }
+                
+                if (_networkLink.deviceNameOffsetUnicode) {
+                    _deviceName = readWString(networkLinkData[_networkLink.deviceNameOffsetUnicode..$]).toUTF8();
+                } else if (_networkLink.deviceNameOffset) {
+                    auto str = readString(networkLinkData[_networkLink.deviceNameOffset..$]);
+                    _deviceName = fromANSIToUnicode(str);
+                }
             }
         }
         
@@ -298,7 +325,11 @@ public:
      * If path parts were stored as Unicode it should not have problems.
      */
     @safe string resolve() const {
-        return _localBasePath ~ _commonPathSuffix;
+        if (_netName.length) {
+            return _netName ~ '\\' ~ _commonPathSuffix;
+        } else {
+            return _localBasePath ~ _commonPathSuffix;
+        }
     }
     
     /**
@@ -468,6 +499,7 @@ private:
     
     struct Volume
     {
+        enum uint minimumSize = 0x10;
         uint size;
         uint driveType;
         uint driveSerialNumber;
@@ -479,7 +511,6 @@ private:
     @trusted static Volume parseVolumeData(const(ubyte)[] volumeIdData)
     {
         Volume volume;
-    
         volume.size = eatValue!uint(volumeIdData);
         volume.driveType = eatValue!uint(volumeIdData);
         volume.driveSerialNumber = eatValue!uint(volumeIdData);
@@ -489,5 +520,34 @@ private:
         }
         volume.data = volumeIdData.dup;
         return volume;
+    }
+    
+    struct CommonNetworkRelativeLink
+    {
+        enum uint minimumSize = 0x14;
+        uint size;
+        uint flags;
+        uint netNameOffset;
+        uint deviceNameOffset;
+        uint networkProviderType;
+        uint netNameOffsetUnicode;
+        uint deviceNameOffsetUnicode;
+    }
+    
+    @trusted static CommonNetworkRelativeLink parseNetworkLink(const(ubyte)[] networkLinkData)
+    {
+        CommonNetworkRelativeLink networkLink;
+        networkLink.size = eatValue!uint(networkLinkData);
+        networkLink.flags = eatValue!uint(networkLinkData);
+        networkLink.netNameOffset = eatValue!uint(networkLinkData);
+        networkLink.deviceNameOffset = eatValue!uint(networkLinkData);
+        networkLink.networkProviderType = eatValue!uint(networkLinkData);
+        
+        if (networkLink.netNameOffset > CommonNetworkRelativeLink.minimumSize) {
+            networkLink.netNameOffsetUnicode = eatValue!uint(networkLinkData);
+            networkLink.deviceNameOffsetUnicode = eatValue!uint(networkLinkData);
+        }
+        
+        return networkLink;
     }
 }
