@@ -325,12 +325,12 @@ public:
     
     /**
      * Icon location to be used when displaying a shell link item in an icon view. 
-     * Icon location can be file path of program (.exe), library (.dll) or icon (.ico).
+     * Icon location can be of program (.exe), library (.dll) or icon (.ico).
      * Note: Icon location may contain environment variable within. It lefts as is if expanding failed.
      * Params:
      *  iconIndex = The index of an icon within a given icon location.
      */
-    @trusted string getIconLocation(ref uint iconIndex) const  {
+    @trusted string getIconLocation(ref int iconIndex) const  {
         iconIndex = _header.iconIndex;
         version(Windows) {
             import core.sys.windows.windows : ExpandEnvironmentStringsW, DWORD;
@@ -354,6 +354,7 @@ public:
     
     /**
      * Resolve link target location.
+     * Returns: Resolved location of link target or null if evaluated path does not exist or target location could not be resolved.
      * Note: In case path parts were stored only as ANSI 
      * the result string may contain garbage characters if function is ran on other system than Windows 
      * or if user changed default code page and shell link had not get updated yet.
@@ -377,9 +378,12 @@ public:
         }
         
         if (_netName.length && _commonPathSuffix.length) {
-            return _netName ~ '\\' ~ _commonPathSuffix;
+            targetPath = _netName ~ '\\' ~ _commonPathSuffix;
+            if (targetPath.exists) {
+                return targetPath;
+            }
         }
-        return targetPath;
+        return null;
     }
     
     /**
@@ -389,8 +393,45 @@ public:
         return _fileName;
     }
     
+    /**
+     * The name of a shell link, i.e. part of file name with directory and extension parts stripped.
+     */
     @nogc @safe string name() const nothrow {
         return _fileName.baseName.stripExtension;
+    }
+    
+    /**
+     * The expected window state of an application launched by the link.
+     * See_Also: $(LINK2 https://msdn.microsoft.com/en-us/library/windows/desktop/ms633548(v=vs.85).aspx, ShowWindow)
+     */
+    enum ShowCommand : uint {
+        normal = 0x1, ///The application is open and its window is open in a normal fashion.
+        maximized = 0x3, ///The application is open, and keyboard focus is given to the application, but its window is not shown.
+        minNoActive = 0x7 ///The application is open, but its window is not shown. It is not given the keyboard focus.
+    }
+    
+    /**
+     * The expected window state of an application launched by the link.
+     * See $(LINK2 https://msdn.microsoft.com/en-us/library/windows/desktop/ms633548(v=vs.85).aspx, ShowWindow).
+     */
+    @nogc @safe ShowCommand showCommand() const nothrow {
+        switch(_header.showCommand) {
+            case ShowCommand.normal:
+            case ShowCommand.maximized:
+            case ShowCommand.minNoActive:
+                return cast(ShowCommand)_header.showCommand;
+            default:
+                return ShowCommand.normal;
+        }
+    }
+    
+    /**
+     * Get hot key used to start link target.
+     * Returns: 2-byte value with virtual key code in low byte and 
+     * $(LINK2 https://msdn.microsoft.com/en-us/library/windows/desktop/ms646278(v=vs.85).aspx, modifier keys) in high byte.
+     */
+    @nogc @safe uint hotKey() const nothrow {
+        return _header.hotKey;
     }
     
 private:
@@ -444,7 +485,7 @@ private:
         ulong accessTime;
         ulong writeTime;
         uint fileSize;
-        uint iconIndex;
+        int iconIndex;
         uint showCommand;
         
         enum {
@@ -477,7 +518,7 @@ private:
         header.accessTime = eatValue!ulong(headerData);
         header.writeTime = eatValue!ulong(headerData);
         header.fileSize = eatValue!uint(headerData);
-        header.iconIndex = eatValue!uint(headerData);
+        header.iconIndex = eatValue!int(headerData);
         header.showCommand = eatValue!uint(headerData);
         header.hotKey = eatValue!ushort(headerData);
         

@@ -17,8 +17,24 @@ void main(string[] args)
     } else {
         writeln("Arguments: ", link.argumentsString);
     }
-    uint iconIndex;
+    int iconIndex;
     auto iconLocation = link.getIconLocation(iconIndex);
     writefln("Icon location: %s. Icon index: %s", iconLocation, iconIndex);
+    
+    auto showCommand = link.showCommand;
+    string cmdStr;
+    final switch(showCommand) {
+        case ShellLink.ShowCommand.normal:
+            cmdStr = "normal";
+            break;
+        case ShellLink.ShowCommand.maximized:
+            cmdStr = "maximized";
+            break;
+        case ShellLink.ShowCommand.minNoActive:
+            cmdStr = "minimized";
+            break;
+    }
+    writeln("Window show: ", cmdStr);
+    
     writeln("Resolve: ", link.resolve());
 }
