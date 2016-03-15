@@ -16,6 +16,7 @@ private {
     import std.traits;
     import std.bitmanip;
     import std.file;
+    import std.path;
     import std.system;
     import std.exception;
     import std.utf;
@@ -130,6 +131,18 @@ version(Windows) {
 
 private @trusted string fromANSIToUnicode(const(char)[] ansi)
 {
+    //Don't convert ascii.
+    bool needConvert;
+    for (size_t i=0; i<ansi.length; ++i) {
+        if (!(ansi[i] >= 0 && ansi[i] < 0x80)) {
+            needConvert = true;
+            break;
+        }
+    }
+    if (!needConvert) {
+        return ansi.idup;
+    }
+
     version(Windows) {
         import core.sys.windows.windows : MultiByteToWideChar;
         auto requiredLength = MultiByteToWideChar(0, 0, ansi.ptr, ansi.length, null, 0);
@@ -165,7 +178,7 @@ private:
     string _localBasePath;
     string _commonPathSuffix;
     
-    string _name;
+    string _description;
     string _relativePath;
     string _workingDir;
     string _arguments;
@@ -256,7 +269,7 @@ public:
         }
         
         if (_header.linkFlags & HasName) {
-            _name = consumeStringData(data);
+            _description = consumeStringData(data);
         }
         if (_header.linkFlags & HasRelativePath) {
             _relativePath = consumeStringData(data);
@@ -276,7 +289,7 @@ public:
      * Get description of for a Shell Link object.
      */
     @nogc @safe string description() const nothrow {
-        return _name;
+        return _description;
     }
     
     /**
@@ -303,7 +316,7 @@ public:
     version(Windows) {
         /**
          * Get command line arguments. Target file path is NOT included.
-         * Note: this function is Windows only.
+         * Note: This function is Windows only. Currently this function allocates on each call.
          */
         @safe string[] arguments() const {
             return parseCommandLine(_arguments);
@@ -321,10 +334,10 @@ public:
      * Resolve target file location.
      * Note: In case path parts were stored only as ANSI 
      * the result string may contain garbage characters if function is ran on other system than Windows 
-     * or if user changes default code page and shell link did not get updated.
+     * or if user changed default code page and shell link had not get updated yet.
      * If path parts were stored as Unicode it should not have problems.
      */
-    @safe string resolve() const {
+    @safe string resolve() const nothrow {
         if (_netName.length) {
             return _netName ~ '\\' ~ _commonPathSuffix;
         } else {
@@ -337,6 +350,10 @@ public:
      */
     @nogc @safe string fileName() const nothrow {
         return _fileName;
+    }
+    
+    @nogc @safe string name() const nothrow {
+        return _fileName.baseName.stripExtension;
     }
     
 private:
