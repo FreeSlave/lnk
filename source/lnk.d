@@ -324,25 +324,62 @@ public:
     }
     
     /**
-     * Get icon location of for a Shell Link object.
+     * Icon location to be used when displaying a shell link item in an icon view. 
+     * Icon location can be file path of program (.exe), library (.dll) or icon (.ico).
+     * Note: Icon location may contain environment variable within. It lefts as is if expanding failed.
+     * Params:
+     *  iconIndex = The index of an icon within a given icon location.
      */
-    @nogc @safe string iconLocation() const nothrow {
+    @trusted string getIconLocation(ref uint iconIndex) const  {
+        iconIndex = _header.iconIndex;
+        version(Windows) {
+            import core.sys.windows.windows : ExpandEnvironmentStringsW, DWORD;
+            import std.process : environment;
+            
+            auto wstrz = _iconLocation.toUTF16z();
+            if (wstrz) {
+                auto requiredLength = ExpandEnvironmentStringsW(wstrz, null, 0);
+                auto buffer = new wchar[requiredLength];
+                auto result = ExpandEnvironmentStringsW(wstrz, buffer.ptr, cast(DWORD)buffer.length);
+                if (result) {
+                    if (buffer[$-1] == 0) {
+                        buffer = buffer[0..$-1];
+                    }
+                    return buffer.toUTF8();
+                }
+            }
+        }
         return _iconLocation;
     }
     
     /**
-     * Resolve target file location.
+     * Resolve link target location.
      * Note: In case path parts were stored only as ANSI 
      * the result string may contain garbage characters if function is ran on other system than Windows 
      * or if user changed default code page and shell link had not get updated yet.
      * If path parts were stored as Unicode it should not have problems.
      */
     @safe string resolve() const nothrow {
-        if (_netName.length) {
-            return _netName ~ '\\' ~ _commonPathSuffix;
-        } else {
-            return _localBasePath ~ _commonPathSuffix;
+        string targetPath;
+    
+        if (_localBasePath.length && _commonPathSuffix.length) {
+            targetPath = _localBasePath ~ _commonPathSuffix;
+            if (targetPath.exists) {
+                return targetPath;
+            }
         }
+        
+        if (_relativePath.length && _workingDir.length) {
+            targetPath = buildPath(_workingDir, _relativePath);
+            if (targetPath.exists) {
+                return targetPath;
+            }
+        }
+        
+        if (_netName.length && _commonPathSuffix.length) {
+            return _netName ~ '\\' ~ _commonPathSuffix;
+        }
+        return targetPath;
     }
     
     /**

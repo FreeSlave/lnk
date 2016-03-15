@@ -17,5 +17,8 @@ void main(string[] args)
     } else {
         writeln("Arguments: ", link.argumentsString);
     }
+    uint iconIndex;
+    auto iconLocation = link.getIconLocation(iconIndex);
+    writefln("Icon location: %s. Icon index: %s", iconLocation, iconIndex);
     writeln("Resolve: ", link.resolve());
 }
