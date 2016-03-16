@@ -163,6 +163,77 @@ private @trusted string fromANSIToUnicode(const(char)[] ansi)
     }
 }
 
+private interface DataReader
+{
+    uint readInt();
+    ushort eatShort();
+    const(ubyte)[] eatBytes(size_t count);
+    const(wchar)[] eatUnicode(size_t count);
+}
+
+private final class FileReader : DataReader
+{
+    import std.stdio : File, stderr;
+
+    this(string fileName) {
+        _file = File(fileName);
+    }
+    
+    uint readInt() {
+        _wasRead = true;
+        return readValue!uint(_file.rawRead(_read[]));
+    }
+    
+    ushort eatShort() {
+        ubyte[ushort.sizeof] shortBuf;
+        return readValue!ushort(_file.rawRead(shortBuf[]));
+    }
+    
+    const(ubyte)[] eatBytes(size_t count) {
+        enforce!ShellLinkException(!_wasRead || count >= _read.length, "Invalid data size");
+        auto buf = new ubyte[count - (_wasRead ? _read.length : 0)];
+        auto toReturn = (_wasRead ? _read[] : (ubyte[]).init) ~ _file.rawRead(buf);
+        _wasRead = false;
+        return toReturn;
+    }
+    
+    const(wchar)[] eatUnicode(size_t count) {
+        auto buf = new wchar[count];
+        return _file.rawRead(buf);
+    }
+    
+private:
+    File _file;
+    ubyte[uint.sizeof] _read;
+    bool _wasRead;
+}
+
+private final class BufferReader : DataReader
+{
+    this(const(ubyte)[] data) {
+        _data = data;
+    }
+    
+    uint readInt() {
+        return readValue!uint(_data);
+    }
+    
+    ushort eatShort() {
+        return eatValue!ushort(_data);
+    }
+    
+    const(ubyte)[] eatBytes(size_t count) {
+        return eatSlice(_data, count);
+    }
+    
+    const(wchar)[] eatUnicode(size_t count) {
+        return eatSlice!wchar(_data, count);
+    }
+    
+private:
+    const(ubyte)[] _data;
+}
+
 /**
  * Class for accessing Shell Link objects (.lnk files)
  */
@@ -193,13 +264,18 @@ public:
     /**
      * Read Shell Link from fileName.
      * Throws: 
-     *  FileException is file could not be read.
+     *  ErrnoException if file could not be read.
      *  ShellLinkException if file could not be parsed.
      * Note: file will be read as whole.
      */
     @trusted this(string fileName)
     {
-        this(cast(const(ubyte)[])read(fileName), fileName);
+        this(new FileReader(fileName));
+    }
+    
+    @trusted this(const(ubyte)[] data, string fileName = null)
+    {
+        this(new BufferReader(data), fileName);
     }
 
     /**
@@ -207,23 +283,23 @@ public:
      * Throws:
      *  ShellLinkException if data could not be parsed.
      */
-    @safe this(const(ubyte)[] data, string fileName = null)
+    private @trusted this(DataReader reader, string fileName = null)
     {
         _fileName = fileName;
-        auto headerSize = readValue!uint(data);
+        auto headerSize = reader.readInt();
         enforce!ShellLinkException(headerSize == Header.requiredHeaderSize, "Wrong Shell Link Header size");
-        auto headerData = eatSlice(data, headerSize);
+        auto headerData = reader.eatBytes(headerSize);
         _header = parseHeader(headerData);
         
         if (_header.linkFlags & HasLinkTargetIDList) {
-            auto idListSize = eatValue!ushort(data);
-            auto idListData = eatSlice(data, idListSize);
+            auto idListSize = reader.eatShort();
+            auto idListData = reader.eatBytes(idListSize);
             _itemIdList = parseItemIdList(idListData);
         }
         
         if (_header.linkFlags & HasLinkInfo) {
-            auto linkInfoSize = readValue!uint(data);
-            auto linkInfoData = eatSlice(data, linkInfoSize);
+            auto linkInfoSize = reader.readInt();
+            auto linkInfoData = reader.eatBytes(linkInfoSize);
             _linkInfoHeader = parseLinkInfo(linkInfoData);
             
             if (_linkInfoHeader.localBasePathOffsetUnicode) {
@@ -269,38 +345,38 @@ public:
         }
         
         if (_header.linkFlags & HasName) {
-            _description = consumeStringData(data);
+            _description = consumeStringData(reader);
         }
         if (_header.linkFlags & HasRelativePath) {
-            _relativePath = consumeStringData(data);
+            _relativePath = consumeStringData(reader);
         }
         if (_header.linkFlags & HasWorkingDir) {
-            _workingDir = consumeStringData(data);
+            _workingDir = consumeStringData(reader);
         }
         if (_header.linkFlags & HasArguments) {
-            _arguments = consumeStringData(data);
+            _arguments = consumeStringData(reader);
         }
         if (_header.linkFlags & HasIconLocation) {
-            _iconLocation = consumeStringData(data);
+            _iconLocation = consumeStringData(reader);
         }
     }
     
     /**
-     * Get description of for a Shell Link object.
+     * Get description for a Shell Link object.
      */
     @nogc @safe string description() const nothrow {
         return _description;
     }
     
     /**
-     * Get relative path of for a Shell Link object.
+     * Get relative path for a Shell Link object.
      */
     @nogc @safe string relativePath() const nothrow {
         return _relativePath;
     }
     
     /**
-     * Get working directory of for a Shell Link object.
+     * Get working directory for a Shell Link object.
      */
     @nogc @safe string workingDirectory() const nothrow {
         return _workingDir;
@@ -326,11 +402,12 @@ public:
     /**
      * Icon location to be used when displaying a shell link item in an icon view. 
      * Icon location can be of program (.exe), library (.dll) or icon (.ico).
-     * Note: Icon location may contain environment variable within. It lefts as is if expanding failed.
+     * Returns: Location of icon or empty string if not specified.
      * Params:
      *  iconIndex = The index of an icon within a given icon location.
+     * Note: Icon location may contain environment variable within. It lefts as is if expanding failed.
      */
-    @trusted string getIconLocation(ref int iconIndex) const  {
+    @trusted string getIconLocation(out int iconIndex) const  {
         iconIndex = _header.iconIndex;
         version(Windows) {
             import core.sys.windows.windows : ExpandEnvironmentStringsW, DWORD;
@@ -354,7 +431,7 @@ public:
     
     version(Windows) {
         /**
-        * Resolve link target location.
+        * Resolve link target location. Windows-only.
         * Returns: Resolved location of link target or null if evaluated path does not exist or target location could not be resolved.
         * Note: In case path parts were stored only as ANSI 
         * the result string may contain garbage characters 
@@ -447,10 +524,10 @@ public:
     }
     
 private:
-    @trusted static string consumeStringData(ref const(ubyte)[] data)
+    @trusted static string consumeStringData(DataReader reader)
     {
-        auto size = eatValue!ushort(data);
-        return eatSlice!wchar(data, size).toUTF8();
+        auto size = reader.eatShort();
+        return reader.eatUnicode(size).toUTF8();
     }
 
     enum : uint {
