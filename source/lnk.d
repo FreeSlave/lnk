@@ -352,38 +352,50 @@ public:
         return _iconLocation;
     }
     
-    /**
-     * Resolve link target location.
-     * Returns: Resolved location of link target or null if evaluated path does not exist or target location could not be resolved.
-     * Note: In case path parts were stored only as ANSI 
-     * the result string may contain garbage characters if function is ran on other system than Windows 
-     * or if user changed default code page and shell link had not get updated yet.
-     * If path parts were stored as Unicode it should not have problems.
-     */
-    @safe string resolve() const nothrow {
-        string targetPath;
-    
-        if (_localBasePath.length && _commonPathSuffix.length) {
-            targetPath = _localBasePath ~ _commonPathSuffix;
-            if (targetPath.exists) {
-                return targetPath;
+    version(Windows) {
+        /**
+        * Resolve link target location.
+        * Returns: Resolved location of link target or null if evaluated path does not exist or target location could not be resolved.
+        * Note: In case path parts were stored only as ANSI 
+        * the result string may contain garbage characters 
+        * if user changed default code page and shell link had not get updated yet.
+        * If path parts were stored as Unicode it should not have problems.
+        */
+        @safe string resolve() const nothrow {
+            string targetPath;
+            bool pathExists;
+            
+            if (_localBasePath.length) {
+                if (_commonPathSuffix.length) {
+                    targetPath = _localBasePath ~ _commonPathSuffix;
+                    pathExists = targetPath.exists;
+                } else if (_localBasePath.isAbsolute) {
+                    targetPath = _localBasePath;
+                    pathExists = targetPath.exists;
+                }
             }
-        }
-        
-        if (_relativePath.length && _workingDir.length) {
-            targetPath = buildPath(_workingDir, _relativePath);
-            if (targetPath.exists) {
-                return targetPath;
+            
+            if (!pathExists && _relativePath.length && _workingDir.length) {
+                targetPath = buildPath(_workingDir, _relativePath);
+                pathExists = targetPath.exists;
             }
-        }
-        
-        if (_netName.length && _commonPathSuffix.length) {
-            targetPath = _netName ~ '\\' ~ _commonPathSuffix;
-            if (targetPath.exists) {
-                return targetPath;
+            
+            if (!pathExists && _netName.length) {
+                if (_commonPathSuffix.length) {
+                    targetPath = _netName ~ '\\' ~ _commonPathSuffix;
+                    pathExists = targetPath.exists;
+                } else if (_netName.isAbsolute) {
+                    targetPath = _netName;
+                    pathExists = targetPath.exists;
+                }
             }
+            
+            if (pathExists) {
+                return buildNormalizedPath(targetPath);
+            } else {
+                return null;
+            } 
         }
-        return null;
     }
     
     /**
