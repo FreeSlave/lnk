@@ -36,5 +36,7 @@ void main(string[] args)
     }
     writeln("Window show: ", cmdStr);
     
-    writeln("Resolve: ", link.resolve());
+    version(Windows) {
+        writeln("Resolve: ", link.resolve());
+    }
 }
