@@ -2,7 +2,7 @@
 
 D library for parsing Shell Link files (.lnk aka shortcuts). 
 
-[![Build Status](https://travis-ci.org/FreeSlave/lnk.svg?branch=master)](https://travis-ci.org/FreeSlave/lnk)
+[![Build Status](https://travis-ci.org/FreeSlave/lnk.svg?branch=master)](https://travis-ci.org/FreeSlave/lnk) [![Windows Build Status](https://ci.appveyor.com/api/projects/status/github/FreeSlave/lnk?branch=master&svg=true)](https://ci.appveyor.com/project/FreeSlave/lnk)
 
 No IShellLink COM interface is used. Instead the library implements parsing of 
 .lnk files itself according to [Shell Link Binary File Format](https://msdn.microsoft.com/en-us/library/dd871305.aspx) specification.
