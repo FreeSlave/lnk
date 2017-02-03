@@ -145,10 +145,10 @@ private @trusted string fromANSIToUnicode(const(char)[] ansi)
 
     version(Windows) {
         import core.sys.windows.windows : MultiByteToWideChar;
-        auto requiredLength = MultiByteToWideChar(0, 0, ansi.ptr, ansi.length, null, 0);
+        auto requiredLength = MultiByteToWideChar(0, 0, ansi.ptr, cast(int)ansi.length, null, 0);
         if (requiredLength) {
             auto wstr = new wchar[requiredLength];
-            auto bytesWritten = MultiByteToWideChar(0, 0, ansi.ptr, ansi.length, wstr.ptr, wstr.length);
+            auto bytesWritten = MultiByteToWideChar(0, 0, ansi.ptr, cast(int)ansi.length, wstr.ptr, cast(int)wstr.length);
             if (bytesWritten) {
                 if (wstr[$-1] == 0) {
                     wstr = wstr[0..$-1];
